@@ -666,13 +666,13 @@ def main_page():
     
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📚 Total Resources", stats['total_resources'])
+        st.metric("📚 Total Resources", stats.get('total_resources', 0))
     with col2:
-        st.metric("🚀 Projects Showcased", stats['total_projects'])
+        st.metric("🚀 Projects Showcased", stats.get('total_projects', 0))
     with col3:
-        st.metric("📥 Downloads", stats['total_downloads'])
+        st.metric("📥 Downloads", stats.get('total_downloads', 0))
     with col4:
-        st.metric("❤️ Total Likes", stats['total_likes'])
+        st.metric("❤️ Total Likes", stats.get('total_likes', 0))
     
     # Recent activity
     st.markdown("---")
@@ -725,7 +725,7 @@ def resource_library_page():
             # Filter options
             col1, col2 = st.columns(2)
             with col1:
-                categories = list(set([r['category'] for r in resources]))
+                categories = sorted(list(set([r['category'] for r in resources])))
                 selected_category = st.selectbox("Filter by Category", ["All"] + categories)
             with col2:
                 sort_by = st.selectbox("Sort by", ["Newest", "Most Downloads", "Most Likes"])
@@ -740,6 +740,8 @@ def resource_library_page():
                 filtered_resources.sort(key=lambda x: x.get('downloads', 0), reverse=True)
             elif sort_by == "Most Likes":
                 filtered_resources.sort(key=lambda x: x.get('likes', 0), reverse=True)
+            else:  # Newest
+                filtered_resources.sort(key=lambda x: x.get('timestamp', ""), reverse=True)
             
             # Display resources
             for resource in filtered_resources:
@@ -747,11 +749,11 @@ def resource_library_page():
                 with st.expander(f"{icon} {resource['title']} - {resource['category']}"):
                     col1, col2 = st.columns([2, 1])
                     with col1:
-                        st.write(f"**Author:** {resource['author']}")
-                        st.write(f"**Description:** {resource.get('description', 'No description')}")
-                        st.write(f"**Category:** {resource['category']}")
-                        st.write(f"**Uploaded:** {format_timestamp(resource.get('timestamp', 'Unknown'))}")
-                        st.write(f"**Downloads:** {resource.get('downloads', 0)} | **Likes:** {resource.get('likes', 0)}")
+                        st.markdown(f"**Author:** {resource['author']}")
+                        st.markdown(f"**Description:** {resource.get('description', 'No description')}")
+                        st.markdown(f"**Category:** {resource['category']}")
+                        st.markdown(f"**Uploaded:** {format_timestamp(resource.get('timestamp', 'Unknown'))}")
+                        st.markdown(f"**Downloads:** {resource.get('downloads', 0)} | **Likes:** {resource.get('likes', 0)}")
                         
                         # Show both file and external links if available
                         links_col1, links_col2 = st.columns(2)
@@ -768,4 +770,629 @@ def resource_library_page():
                                 st.image(resource['file_url'], width=200)
                             except:
                                 st.write("📷 Image preview unavailable")
-                        elif resource
+                        elif resource.get('external_url') and not resource.get('file_url'):
+                            st.write("🔗 External Resource")
+        else:
+            st.info("No resources available yet. Upload the first one!")
+    
+    with tab2:
+        st.subheader("📤 Upload New Resource")
+        
+        # Ensure the user is authenticated
+        if not require_auth():
+            st.warning("⚠️ You need to be logged in to upload resources.")
+            return
+        
+        # Resource type selection
+        resource_type_option = st.radio(
+            "What type of resource are you sharing?",
+            options=["📁 File Upload", "🔗 External Link", "📁🔗 Both File and Link"],
+            horizontal=True
+        )
+        
+        with st.form("upload_form"):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                title = st.text_input("Resource Title*", placeholder="e.g., Python Basics Tutorial")
+                author = st.text_input("Your Name*", placeholder="e.g., John Doe")
+                category = st.selectbox("Category*", [
+                    "Programming", "Web Development", "Data Science", "Design", 
+                    "Machine Learning", "Mobile Development", "DevOps", "Database",
+                    "UI/UX", "Cybersecurity", "Cloud Computing", "Other"
+                ])
+            
+            with col2:
+                description = st.text_area("Description", placeholder="Brief description of the resource...")
+                tags = st.text_input("Tags (comma-separated)", placeholder="python, tutorial, beginner")
+            
+            # Conditional inputs based on resource type
+            uploaded_file = None
+            external_url = ""
+            
+            if resource_type_option in ["📁 File Upload", "📁🔗 Both File and Link"]:
+                uploaded_file = st.file_uploader(
+                    "Choose a file (images, videos, PDFs, documents)", 
+                    type=["jpg", "jpeg", "png", "gif", "mp4", "mov", "avi", "pdf", "txt", "docx", "pptx", "xlsx", "zip"]
+                )
+            
+            if resource_type_option in ["🔗 External Link", "📁🔗 Both File and Link"]:
+                external_url = st.text_input(
+                    "External URL", 
+                    placeholder="https://example.com/resource",
+                    help="Link to external resource (website, article, tutorial, etc.)"
+                )
+            
+            submitted = st.form_submit_button("📤 Upload Resource", use_container_width=True)
+            
+            # Validation and submission
+            if submitted and title and author:
+                # Validate inputs based on resource type
+                is_valid = True
+                error_messages = []
+                
+                if resource_type_option == "📁 File Upload" and not uploaded_file:
+                    error_messages.append("Please upload a file.")
+                    is_valid = False
+                elif resource_type_option == "🔗 External Link" and not external_url:
+                    error_messages.append("Please provide an external URL.")
+                    is_valid = False
+                elif resource_type_option == "📁🔗 Both File and Link" and not uploaded_file and not external_url:
+                    error_messages.append("Please provide either a file or an external URL (or both).")
+                    is_valid = False
+                
+                # Validate URL format
+                if external_url and not validate_url(external_url):
+                    error_messages.append("Please enter a valid URL (starting with http:// or https://).")
+                    is_valid = False
+                
+                if is_valid:
+                    resource_data = {
+                        "title": title,
+                        "author": author,
+                        "category": category,
+                        "description": description,
+                        "external_url": external_url or None,
+                        "tags": tags,
+                        "user_id": st.session_state.current_user["id"]
+                    }
+                    
+                    # Handle file upload if present
+                    if uploaded_file:
+                        with st.spinner("🔄 Uploading file to Supabase..."):
+                            upload_result = upload_to_supabase(uploaded_file)
+                            
+                            if upload_result:
+                                resource_data.update({
+                                    "file_url": upload_result["url"],
+                                    "file_type": uploaded_file.type,
+                                    "resource_type": upload_result["resource_type"],
+                                    "file_size": upload_result["bytes"]
+                                })
+                            else:
+                                st.error("File upload failed. Please try again.")
+                                st.stop()
+                    
+                    # Save to database
+                    resource_id = db_manager.add_resource(resource_data)
+                    if resource_id:
+                        st.success("✅ Resource uploaded successfully!")
+                        
+                        # Show preview
+                        st.markdown("**Preview:**")
+                        preview_col1, preview_col2 = st.columns(2)
+                        
+                        with preview_col1:
+                            if resource_data.get("file_url"):
+                                if resource_data.get("resource_type") == "image":
+                                    st.image(resource_data["file_url"], width=300)
+                                elif resource_data.get("resource_type") == "video":
+                                    st.video(resource_data["file_url"])
+                                else:
+                                    st.markdown(f"[📁 View File]({resource_data['file_url']})")
+                        
+                        with preview_col2:
+                            if resource_data.get("external_url"):
+                                st.markdown(f"[🔗 External Link]({resource_data['external_url']})")
+                                st.write(f"**External URL:** {resource_data['external_url']}")
+                        
+                        st.balloons()
+                    else:
+                        st.error("Failed to save resource. Please try again.")
+                else:
+                    for error in error_messages:
+                        st.error(error)
+            elif submitted:
+                st.error("Please fill in all required fields.")
+    
+    def project_showcase_page():
+        st.title("🚀 Project Showcase")
+        
+        tab1, tab2 = st.tabs(["🎯 Browse Projects", "📤 Share Project"])
+        
+        with tab1:
+            st.subheader("Community Projects")
+            projects = db_manager.get_projects()
+            
+            if projects:
+                # Filter and sort options
+                col1, col2 = st.columns(2)
+                with col1:
+                    categories = sorted(list(set([p['category'] for p in projects])))
+                    selected_category = st.selectbox("Filter by Category", ["All"] + categories, key="project_filter")
+                with col2:
+                    sort_by = st.selectbox("Sort by", ["Newest", "Most Likes", "Most Views"], key="project_sort")
+                
+                # Apply filters
+                filtered_projects = projects
+                if selected_category != "All":
+                    filtered_projects = [p for p in projects if p['category'] == selected_category]
+                
+                # Sort projects
+                if sort_by == "Most Likes":
+                    filtered_projects.sort(key=lambda x: x.get('likes', 0), reverse=True)
+                elif sort_by == "Most Views":
+                    filtered_projects.sort(key=lambda x: x.get('views', 0), reverse=True)
+                else:  # Newest
+                    filtered_projects.sort(key=lambda x: x.get('timestamp', ""), reverse=True)
+                
+                # Display projects
+                for project in filtered_projects:
+                    with st.expander(f"🚀 {project['title']} - {project['category']}"):
+                        col1, col2 = st.columns([2, 1])
+                        with col1:
+                            st.markdown(f"**Author:** {project['author']}")
+                            st.markdown(f"**Description:** {project.get('description', 'No description')}")
+                            st.markdown(f"**Technologies:** {project.get('technologies', 'Not specified')}")
+                            st.markdown(f"**Likes:** {project.get('likes', 0)} | **Views:** {project.get('views', 0)}")
+                            
+                            # Links
+                            links_col1, links_col2 = st.columns(2)
+                            with links_col1:
+                                if project.get('github_url'):
+                                    st.markdown(f"[📂 GitHub Repository]({project['github_url']})")
+                            with links_col2:
+                                if project.get('demo_url'):
+                                    st.markdown(f"[🌐 Live Demo]({project['demo_url']})")
+                        
+                        with col2:
+                            st.caption(f"Shared: {format_timestamp(project.get('timestamp', ''))}")
+                            if project.get('image_url'):
+                                try:
+                                    st.image(project['image_url'], width=200)
+                                except:
+                                    st.write("📷 Image preview unavailable")
+            else:
+                st.info("No projects showcased yet. Share your work!")
+        
+        with tab2:
+            st.subheader("Share Your Project")
+            
+            # Ensure the user is authenticated
+            if not require_auth():
+                st.warning("⚠️ You need to be logged in to share projects.")
+                return
+            
+            with st.form("project_form"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    title = st.text_input("Project Title*", placeholder="e.g., Weather Dashboard App")
+                    author = st.text_input("Your Name*", placeholder="e.g., Jane Smith")
+                    category = st.selectbox("Category*", [
+                        "Web Application", "Mobile App", "Data Science", "Machine Learning",
+                        "Game", "Desktop Application", "API", "Library/Framework",
+                        "DevOps Tool", "UI/UX Design", "Other"
+                    ])
+                    technologies = st.text_input("Technologies Used*", placeholder="e.g., React, Node.js, MongoDB")
+                
+                with col2:
+                    description = st.text_area("Project Description", placeholder="Describe what your project does...")
+                    github_url = st.text_input("GitHub Repository URL", placeholder="https://github.com/username/repo")
+                    demo_url = st.text_input("Live Demo URL", placeholder="https://yourproject.com")
+                
+                # Project image upload
+                project_image = st.file_uploader(
+                    "Project Screenshot/Image (optional)",
+                    type=["jpg", "jpeg", "png", "gif"],
+                    help="Upload a screenshot or image of your project"
+                )
+                
+                submitted = st.form_submit_button("🚀 Share Project", use_container_width=True)
+                
+                if submitted and title and author and technologies:
+                    # Validate URLs
+                    is_valid = True
+                    error_messages = []
+                    
+                    if github_url and not validate_url(github_url):
+                        error_messages.append("Please enter a valid GitHub URL.")
+                        is_valid = False
+                    
+                    if demo_url and not validate_url(demo_url):
+                        error_messages.append("Please enter a valid demo URL.")
+                        is_valid = False
+                    
+                    if is_valid:
+                        project_data = {
+                            "title": title,
+                            "author": author,
+                            "category": category,
+                            "description": description,
+                            "technologies": technologies,
+                            "github_url": github_url or None,
+                            "demo_url": demo_url or None,
+                            "user_id": st.session_state.current_user["id"]
+                        }
+                        
+                        # Handle image upload if present
+                        if project_image:
+                            with st.spinner("🔄 Uploading project image..."):
+                                upload_result = upload_to_supabase(project_image)
+                                
+                                if upload_result:
+                                    project_data["image_url"] = upload_result["url"]
+                                else:
+                                    st.warning("Image upload failed, but project will be saved without image.")
+                        
+                        # Save to database
+                        project_id = db_manager.add_project(project_data)
+                        if project_id:
+                            st.success("✅ Project shared successfully!")
+                            
+                            # Show preview
+                            st.markdown("**Preview:**")
+                            if project_data.get("image_url"):
+                                st.image(project_data["image_url"], width=400)
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if project_data.get("github_url"):
+                                    st.markdown(f"[📂 GitHub Repository]({project_data['github_url']})")
+                            with col2:
+                                if project_data.get("demo_url"):
+                                    st.markdown(f"[🌐 Live Demo]({project_data['demo_url']})")
+                            
+                            st.balloons()
+                        else:
+                            st.error("Failed to share project. Please try again.")
+                    else:
+                        for error in error_messages:
+                            st.error(error)
+                elif submitted:
+                    st.error("Please fill in all required fields (Title, Author, Technologies).")
+
+def documentation_hub_page():
+    st.title("📖 Documentation Hub")
+    st.markdown("Quick access to popular documentation and learning resources")
+    
+    # Popular documentation categories
+    doc_categories = {
+        "🐍 Python": [
+            {"name": "Python Official Docs", "url": "https://docs.python.org/3/", "desc": "Official Python documentation"},
+            {"name": "Django", "url": "https://docs.djangoproject.com/", "desc": "High-level Python web framework"},
+            {"name": "Flask", "url": "https://flask.palletsprojects.com/", "desc": "Lightweight web framework"},
+            {"name": "FastAPI", "url": "https://fastapi.tiangolo.com/", "desc": "Modern, high-performance web framework"},
+            {"name": "NumPy", "url": "https://numpy.org/doc/", "desc": "Numerical computing library"},
+            {"name": "Pandas", "url": "https://pandas.pydata.org/docs/", "desc": "Data manipulation and analysis"},
+        ],
+        "🌐 Web Development": [
+            {"name": "MDN Web Docs", "url": "https://developer.mozilla.org/", "desc": "Web development resources"},
+            {"name": "React", "url": "https://react.dev/", "desc": "JavaScript library for UIs"},
+            {"name": "Vue.js", "url": "https://vuejs.org/guide/", "desc": "Progressive JavaScript framework"},
+            {"name": "Angular", "url": "https://angular.io/docs", "desc": "Platform for building mobile and desktop apps"},
+            {"name": "Node.js", "url": "https://nodejs.org/docs/", "desc": "JavaScript runtime environment"},
+            {"name": "Express.js", "url": "https://expressjs.com/", "desc": "Fast, minimalist web framework"},
+        ],
+        "☁️ Cloud & DevOps": [
+            {"name": "AWS Documentation", "url": "https://docs.aws.amazon.com/", "desc": "Amazon Web Services docs"},
+            {"name": "Google Cloud", "url": "https://cloud.google.com/docs", "desc": "Google Cloud Platform documentation"},
+            {"name": "Azure", "url": "https://docs.microsoft.com/azure/", "desc": "Microsoft Azure documentation"},
+            {"name": "Docker", "url": "https://docs.docker.com/", "desc": "Containerization platform"},
+            {"name": "Kubernetes", "url": "https://kubernetes.io/docs/", "desc": "Container orchestration"},
+            {"name": "Terraform", "url": "https://www.terraform.io/docs", "desc": "Infrastructure as code"},
+        ],
+        "🗄️ Databases": [
+            {"name": "PostgreSQL", "url": "https://www.postgresql.org/docs/", "desc": "Advanced open source database"},
+            {"name": "MongoDB", "url": "https://docs.mongodb.com/", "desc": "NoSQL document database"},
+            {"name": "MySQL", "url": "https://dev.mysql.com/doc/", "desc": "Popular relational database"},
+            {"name": "Redis", "url": "https://redis.io/documentation", "desc": "In-memory data structure store"},
+            {"name": "Supabase", "url": "https://supabase.com/docs", "desc": "Open source Firebase alternative"},
+        ],
+        "🤖 AI/ML": [
+            {"name": "TensorFlow", "url": "https://www.tensorflow.org/api_docs", "desc": "Machine learning platform"},
+            {"name": "PyTorch", "url": "https://pytorch.org/docs/", "desc": "Deep learning framework"},
+            {"name": "Scikit-learn", "url": "https://scikit-learn.org/stable/", "desc": "Machine learning library"},
+            {"name": "Hugging Face", "url": "https://huggingface.co/docs", "desc": "NLP models and datasets"},
+            {"name": "OpenAI API", "url": "https://platform.openai.com/docs", "desc": "AI API documentation"},
+        ],
+        "📱 Mobile Development": [
+            {"name": "React Native", "url": "https://reactnative.dev/docs", "desc": "Cross-platform mobile development"},
+            {"name": "Flutter", "url": "https://docs.flutter.dev/", "desc": "Google's UI toolkit"},
+            {"name": "Swift", "url": "https://swift.org/documentation/", "desc": "iOS development language"},
+            {"name": "Kotlin", "url": "https://kotlinlang.org/docs/", "desc": "Android development language"},
+        ]
+    }
+    
+    # Search functionality
+    search_query = st.text_input("🔍 Search documentation...", placeholder="e.g., React, Python, Docker")
+    
+    if search_query:
+        # Search through all documentation
+        search_results = []
+        for category, docs in doc_categories.items():
+            for doc in docs:
+                if (search_query.lower() in doc["name"].lower() or 
+                    search_query.lower() in doc["desc"].lower()):
+                    search_results.append({**doc, "category": category})
+        
+        if search_results:
+            st.subheader(f"🔍 Search Results ({len(search_results)} found)")
+            for result in search_results:
+                with st.container():
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.markdown(f"**[{result['name']}]({result['url']})** - {result['category']}")
+                        st.caption(result['desc'])
+                    with col2:
+                        if st.button("Open", key=f"search_{result['name']}", use_container_width=True):
+                            st.markdown(f"[🔗 Open {result['name']}]({result['url']})")
+                    st.divider()
+        else:
+            st.info("No documentation found for your search query.")
+    else:
+        # Display categories
+        st.subheader("📚 Popular Documentation")
+        
+        # Create tabs for each category
+        tab_names = list(doc_categories.keys())
+        tabs = st.tabs(tab_names)
+        
+        for i, (category, docs) in enumerate(doc_categories.items()):
+            with tabs[i]:
+                # Display docs in a grid
+                cols = st.columns(2)
+                for idx, doc in enumerate(docs):
+                    with cols[idx % 2]:
+                        with st.container():
+                            st.markdown(f"**[{doc['name']}]({doc['url']})**")
+                            st.caption(doc['desc'])
+                            if st.button("Open Documentation", key=f"{category}_{doc['name']}", use_container_width=True):
+                                st.markdown(f"[🔗 Open {doc['name']}]({doc['url']})")
+                        st.markdown("---")
+
+def admin_panel_page():
+    st.title("🔧 Admin Panel")
+    
+    if not check_admin_password():
+        return
+    
+    st.success("✅ Admin access granted")
+    
+    # Admin tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "📚 Manage Resources", "🚀 Manage Projects", "⚙️ Settings"])
+    
+    with tab1:
+        st.subheader("📊 Platform Dashboard")
+        
+        # Get comprehensive stats
+        stats = db_manager.get_stats()
+        
+        # Display metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📚 Total Resources", stats.get('total_resources', 0))
+        with col2:
+            st.metric("🚀 Total Projects", stats.get('total_projects', 0))
+        with col3:
+            st.metric("📥 Total Downloads", stats.get('total_downloads', 0))
+        with col4:
+            st.metric("❤️ Total Likes", stats.get('total_likes', 0))
+        
+        st.markdown("---")
+        
+        # Recent activity
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📈 Recent Resources")
+            recent_resources = db_manager.get_resources(limit=5)
+            if recent_resources:
+                for resource in recent_resources:
+                    with st.container():
+                        st.write(f"**{resource['title']}** by {resource['author']}")
+                        st.caption(f"{resource['category']} | {format_timestamp(resource.get('timestamp', ''))}")
+                        st.caption(f"Downloads: {resource.get('downloads', 0)} | Likes: {resource.get('likes', 0)}")
+            else:
+                st.info("No resources yet")
+        
+        with col2:
+            st.subheader("🚀 Recent Projects")
+            recent_projects = db_manager.get_projects(limit=5)
+            if recent_projects:
+                for project in recent_projects:
+                    with st.container():
+                        st.write(f"**{project['title']}** by {project['author']}")
+                        st.caption(f"{project['category']} | {format_timestamp(project.get('timestamp', ''))}")
+                        st.caption(f"Likes: {project.get('likes', 0)} | Views: {project.get('views', 0)}")
+            else:
+                st.info("No projects yet")
+    
+    with tab2:
+        st.subheader("📚 Manage Resources")
+        
+        resources = db_manager.get_resources()
+        if resources:
+            for resource in resources:
+                with st.expander(f"{resource['title']} - {resource['category']}"):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.markdown(f"**ID:** {resource['id']}")
+                        st.markdown(f"**Author:** {resource['author']}")
+                        st.markdown(f"**Description:** {resource.get('description', 'No description')}")
+                        st.markdown(f"**Downloads:** {resource.get('downloads', 0)} | **Likes:** {resource.get('likes', 0)}")
+                        st.markdown(f"**Uploaded:** {format_timestamp(resource.get('timestamp', ''))}")
+                        
+                        if resource.get('file_url'):
+                            st.markdown(f"[📁 View File]({resource['file_url']})")
+                        if resource.get('external_url'):
+                            st.markdown(f"[🔗 External Link]({resource['external_url']})")
+                    
+                    with col2:
+                        if st.button("🗑️ Delete", key=f"del_resource_{resource['id']}", use_container_width=True):
+                            if db_manager.delete_resource(resource['id']):
+                                st.success("Resource deleted!")
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete resource")
+        else:
+            st.info("No resources to manage")
+    
+    with tab3:
+        st.subheader("🚀 Manage Projects")
+        
+        projects = db_manager.get_projects()
+        if projects:
+            for project in projects:
+                with st.expander(f"{project['title']} - {project['category']}"):
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        st.markdown(f"**ID:** {project['id']}")
+                        st.markdown(f"**Author:** {project['author']}")
+                        st.markdown(f"**Technologies:** {project.get('technologies', 'Not specified')}")
+                        st.markdown(f"**Description:** {project.get('description', 'No description')}")
+                        st.markdown(f"**Likes:** {project.get('likes', 0)} | **Views:** {project.get('views', 0)}")
+                        st.markdown(f"**Shared:** {format_timestamp(project.get('timestamp', ''))}")
+                        
+                        if project.get('github_url'):
+                            st.markdown(f"[📂 GitHub]({project['github_url']})")
+                        if project.get('demo_url'):
+                            st.markdown(f"[🌐 Live Demo]({project['demo_url']})")
+                    
+                    with col2:
+                        if project.get('image_url'):
+                            try:
+                                st.image(project['image_url'], width=150)
+                            except:
+                                st.write("📷 Image unavailable")
+                        
+                        if st.button("🗑️ Delete", key=f"del_project_{project['id']}", use_container_width=True):
+                            if db_manager.delete_project(project['id']):
+                                st.success("Project deleted!")
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete project")
+        else:
+            st.info("No projects to manage")
+    
+    with tab4:
+        st.subheader("⚙️ Platform Settings")
+        
+        st.markdown("**Current Configuration:**")
+        st.code(f"""
+        Supabase URL: {SUPABASE_URL[:50]}...
+        Admin Password: {'*' * len(ADMIN_PASSWORD)}
+        Database Status: Connected ✅
+        Storage Status: Connected ✅
+        """)
+        
+        st.markdown("**Database Health Check:**")
+        try:
+            # Test database connection
+            test_resources = db_manager.get_resources(limit=1)
+            test_projects = db_manager.get_projects(limit=1)
+            st.success("✅ Database connection is healthy")
+        except Exception as e:
+            st.error(f"❌ Database connection issue: {str(e)}")
+
+# --- Main Application Logic ---
+def main():
+    # Initialize session state
+    init_session_state()
+    
+    # Check authentication
+    if not require_auth():
+        login_page()
+        return
+    
+    # Sidebar navigation
+    with st.sidebar:
+        st.title("📚 V-Learn")
+        st.markdown("---")
+        
+        # User info
+        current_user = get_current_user()
+        if current_user:
+            if current_user.get('avatar_url'):
+                st.image(current_user['avatar_url'], width=80)
+            
+            st.write(f"👋 Welcome, **{current_user['full_name']}**!")
+            
+            if current_user.get('gitlab_profile'):
+                st.markdown(f"[🦊 GitLab Profile]({current_user['gitlab_profile']})")
+            
+            st.markdown("---")
+        
+        # Navigation menu
+        menu_options = {
+            "🏠 Home": "home",
+            "📖 Documentation": "documentation", 
+            "📁 Resources": "resources",
+            "🚀 Projects": "projects"
+        }
+        
+        # Add admin button for admins
+        if current_user and current_user.get('role') == 'admin':
+            menu_options["🔧 Admin"] = "admin"
+        
+        for label, page in menu_options.items():
+            if st.button(label, use_container_width=True):
+                st.session_state.current_page = page
+        
+        st.markdown("---")
+        
+        # Quick stats in sidebar
+        stats = db_manager.get_stats()
+        st.metric("📚 Resources", stats.get('total_resources', 0))
+        st.metric("🚀 Projects", stats.get('total_projects', 0))
+        
+        st.markdown("---")
+        st.markdown("**💡 Quick Tips:**")
+        st.caption("• Upload files or share links")
+        st.caption("• Showcase your projects")
+        st.caption("• Browse documentation")
+        st.caption("• Build and learn together!")
+        
+        # Logout button
+        if st.button("🚪 Logout", use_container_width=True):
+            logout()
+    
+    # Main content area
+    current_page = st.session_state.current_page
+    
+    if current_page == 'home':
+        main_page()
+    elif current_page == 'documentation':
+        documentation_hub_page()
+    elif current_page == 'resources':
+        resource_library_page()
+    elif current_page == 'projects':
+        project_showcase_page()
+    elif current_page == 'admin':
+        admin_panel_page()
+    
+    # Footer
+    st.markdown("---")
+    st.markdown(
+        """
+        <div style='text-align: center; color: #666; padding: 20px;'>
+        📚 V-Learn - Community Learning Platform | 
+        Built with ❤️ using Streamlit & Supabase
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+if __name__ == "__main__":
+    main()
